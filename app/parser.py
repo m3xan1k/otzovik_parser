@@ -118,7 +118,11 @@ async def main():
     client.set_new_proxy()
     logging.info(f'Current proxy={client.proxy}, requesting {url}')
     reconnect_counter = 0
-    while reconnect_counter < 10:
+
+    # По скольку на сайте нельзя понять общее количество страниц
+    while True:
+        # Частенько может возникнуть исключение, если прокся не доступна, тогда пробуем новую проксю и так до 10ти раз
+        while reconnect_counter < 10:
         try:
             html = await client.run(base_url + url)
             reconnect_counter = 0
@@ -126,7 +130,6 @@ async def main():
         except:
             reconnect_counter += 1
             client.set_new_proxy
-    while url:
         soup = Parser(html, 'lxml')
         data = soup.get_data()
 
@@ -137,7 +140,7 @@ async def main():
             client.set_new_proxy()
             logging.info(f'Current proxy={client.proxy}')
 
-            # Частенько может возникнуть исключение, если прокся не доступна, тогда пробуем новую проксю
+            
             while reconnect_counter < 10:
                 try:
                     logging.info(f'Requesting {r_url}')
@@ -154,13 +157,13 @@ async def main():
         logging.info(f'All reviews on {url} done')
         all_data.append(list(zip(data, reviews)))
         logging.info(f'all_data={all_data}')
+
+        # Находим url следующей страницы, если нет, значит страница последняя, если да меняем проксю
         url = soup.get_next_page_url()
         if not url:
             logging.info('Last page done')
             break
         client.set_proxy()
-        logging.info(f'Current proxy={client.proxy}, requesting {url}')
-        html = await client.run(base_url + url)
 
 
 if __name__ == '__main__':
