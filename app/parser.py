@@ -24,13 +24,13 @@ class Downloader:
         self.timeout = aiohttp.ClientTimeout(total=15)
 
     def set_new_proxy(self):
-        with open('app/http_proxies.txt', 'r') as f:
+        with open(f'{settings.BASE_DIR}/http_proxies.txt', 'r') as f:
             lines = f.readlines()
             proxy = random.choice(lines)
         self.proxy = proxy
 
     def set_new_user_agent(self):
-        with open('app/whatismybrowser-user-agent-database.txt') as f:
+        with open(f'{settings.BASE_DIR}/whatismybrowser-user-agent-database.txt') as f:
             lines = f.readlines()
             user_agent = random.choice(lines)
         self.user_agent = user_agent
@@ -85,6 +85,10 @@ class Parser(BeautifulSoup):
         ]
         return data
 
+    '''
+    Парсинг страницы с отзывом,
+    разбираем плюсы, минусы и описание
+    '''
     def get_review(self):
         plus = self.find(class_='review-plus')
         minus = self.find(class_='review-minus')
@@ -98,17 +102,26 @@ class Parser(BeautifulSoup):
             'description': f'{plus} {minus} {description}',
         }
 
+    '''
+    Парсим и нормализуем страну и город
+    '''
     @classmethod
     def normalize_places(cls, user_info):
         places = [info.find_all('div')[-1].text for info in user_info]
         splitted_places = []
         for place in places:
-            place = place.split(', ')
-            splitted_places.append(place)
+            if ',' not in place:
+                splitted_places.append([place, ''])
+            else:
+                place = place.split(', ')
+                splitted_places.append(place)
         countries = [{'country': country} for country, city in splitted_places]
         cities = [{'city': city} for country, city in splitted_places]
         return countries, cities
 
+    '''
+    Немного преобразуем дату
+    '''
     @classmethod
     def normalize_dates(cls, dates):
         normalized_dates = []
@@ -117,11 +130,15 @@ class Parser(BeautifulSoup):
             date_val = date_val.split('.')
             date_val = list(map((lambda x: int(x)), date_val))
             day, month, year = date_val
-            normalized_dates.append({'date': datetime(year, month, day)})
+            normalized_dates.append({'date': datetime(year, month, day).strftime('%d-%m-%Y')})
         return normalized_dates
 
 
 class Writer:
+    '''
+    Класс для записи данных в csv-файл,
+    всё банально на стандартной библиотеке
+    '''
     def __init__(self, filepath):
         self.filepath = filepath
 
@@ -145,7 +162,7 @@ class Writer:
 async def main():
     # TODO collect dead proxies to skip them
     logging.basicConfig(level=logging.DEBUG)
-    writer = Writer('app/result.csv')
+    writer = Writer(f'{settings.BASE_DIR}/result.csv')
 
     '''
     Готовим первый запрос — собираем url,
@@ -164,7 +181,8 @@ async def main():
     запускаем бесконечный цикл, пока страницы есть
     '''
     while True:
-        '''Частенько может возникнуть исключение,
+        '''
+        Частенько может возникнуть исключение,
         если прокся не доступна,
         тогда пробуем новую проксю и так до 10ти раз
         '''
@@ -185,6 +203,7 @@ async def main():
                 reconnect_counter += 1
                 client.set_new_proxy()
                 client.set_new_user_agent()
+                logging.warning(f'Try to set new proxy={client.proxy}')
         logging.info(f'Connected {base_url + url}')
         soup = Parser(html, 'lxml')
         data = soup.get_data()
@@ -195,7 +214,8 @@ async def main():
             client.set_new_proxy()
             logging.info(f'Current proxy={client.proxy}')
 
-            '''Пытаемся скачать html'''
+            '''Пытаемся скачать html со страницы отзывов'''
+            # TODO убрать дублирование этой конструкции
             while True:
                 if reconnect_counter > 10:
                     logging.warning('Reconnect counter is more than 10!')
