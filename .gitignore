@@ -3,5 +3,7 @@ __pycache__/
 .vscode/
 test.html
 test.py
-.DS_Store/
+.DS_Store
+app/.DS_Store
+app/result.csv
 
