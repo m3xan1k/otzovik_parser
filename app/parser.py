@@ -125,7 +125,7 @@ class Writer:
     def __init__(self, filepath):
         self.filepath = filepath
 
-    def write(self, data):
+    def write(self, row):
         if os.path.isfile(self.filepath):
             mode = 'a'
         else:
@@ -139,18 +139,18 @@ class Writer:
             writer = csv.DictWriter(file, fieldnames=fieldnames)
             if mode == 'w':
                 writer.writeheader()
-            for row in data:
-                writer.writerow(row)
+            writer.writerow(row)
 
 
 async def main():
     # TODO collect dead proxies to skip them
     logging.basicConfig(level=logging.DEBUG)
-    all_data = []
+    writer = Writer('app/result.csv')
 
     '''
     Готовим первый запрос — собираем url,
-    инициализируем загрузчика и выбираем новый прокси
+    инициализируем загрузчика и выбираем новый прокси,
+    новый user-agent, инициализируем счетчик переподключений
     '''
     base_url = settings.BASE_URL
     url = '/reviews/bukmekerskaya_kontora_liga_stavok/'
@@ -180,7 +180,8 @@ async def main():
                     continue
                 reconnect_counter = 0
                 break
-            except:
+            except Exception as e:
+                logging.warning(e)
                 reconnect_counter += 1
                 client.set_new_proxy()
                 client.set_new_user_agent()
@@ -189,12 +190,12 @@ async def main():
         data = soup.get_data()
 
         '''Отзывы находятся на отдельных страницах'''
-        reviews = []
         review_urls = soup.get_review_urls()
-        for r_url in review_urls:
+        for r_url, t_row in zip(review_urls, zip(*data)):
             client.set_new_proxy()
             logging.info(f'Current proxy={client.proxy}')
 
+            '''Пытаемся скачать html'''
             while True:
                 if reconnect_counter > 10:
                     logging.warning('Reconnect counter is more than 10!')
@@ -207,18 +208,25 @@ async def main():
                         continue
                     reconnect_counter = 0
                     break
-                except:
+                except Exception as e:
+                    logging.warning(e)
                     reconnect_counter += 1
                     client.set_new_proxy()
                     client.set_new_user_agent()
                     logging.warning(f'Try to set new proxy={client.proxy}')
             logging.info('Request passed')
+
+            '''Парсим html'''
             r_soup = Parser(r_html, 'lxml')
-            reviews.append(r_soup.get_review())
+            review = r_soup.get_review()
+
+            '''Сцепляем данные и записываем в csv'''
+            row = {}
+            for elem in t_row:
+                row.update(elem)
+            row.update(review)
+            writer.write(row)
         logging.info(f'All reviews on {url} done')
-        data.append(reviews)
-        all_data.append(zip(*data))
-        logging.info(f'all_data={all_data}')
 
         '''
         Находим url следующей страницы,
@@ -231,9 +239,7 @@ async def main():
             break
         client.set_new_proxy()
         client.set_new_user_agent()
-        for block in all_data:
-            for item in block:
-                print(item)
+
 
 if __name__ == '__main__':
     loop = asyncio.get_event_loop()
