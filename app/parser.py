@@ -246,6 +246,7 @@ async def main():
         if not url:
             logging.info('Last page done')
             break
+        url = base_url + url
         client.set_new_proxy()
         client.set_new_user_agent()
 
