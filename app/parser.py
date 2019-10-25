@@ -23,11 +23,13 @@ class Downloader:
         self.user_agent = user_agent
         self.timeout = aiohttp.ClientTimeout(total=15)
 
-    def set_new_proxy(self):
+        '''Загружаем список проксей в память'''
         with open(f'{settings.BASE_DIR}/http_proxies.txt', 'r') as f:
             lines = f.readlines()
-            proxy = random.choice(lines)
-        self.proxy = proxy
+            self.proxy_list = lines
+
+    def set_new_proxy(self):
+        self.proxy = random.choice(self.proxy_list)
 
     def set_new_user_agent(self):
         with open(f'{settings.BASE_DIR}/whatismybrowser-user-agent-database.txt') as f:
