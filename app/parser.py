@@ -37,6 +37,32 @@ class Downloader:
             user_agent = random.choice(lines)
         self.user_agent = user_agent
 
+    '''
+    Частенько может возникнуть исключение,
+    если прокся не доступна,
+    тогда пробуем новую проксю и так до 10ти раз
+    '''
+    async def failsafe_connect(self, url):
+        reconnect_counter = 0
+        while True:
+            if reconnect_counter > 10:
+                logging.warning('Reconnect counter is more than 10!')
+            try:
+                logging.info(f'Current proxy={self.proxy}, requesting {url}')
+                html = await self.run(url)
+                if not html:
+                    logging.warning(html)
+                    self.set_new_proxy()
+                    self.set_new_user_agent()
+                    continue
+                return html
+            except Exception as e:
+                logging.warning(e)
+                reconnect_counter += 1
+                self.set_new_proxy()
+                self.set_new_user_agent()
+                logging.warning(f'Try to set new proxy={self.proxy}')
+
     async def fetch(self, session, url):
         async with session.get(url, proxy=self.proxy) as response:
             if response.status != 200:
@@ -172,41 +198,19 @@ async def main():
     новый user-agent, инициализируем счетчик переподключений
     '''
     base_url = settings.BASE_URL
-    url = '/reviews/bukmekerskaya_kontora_liga_stavok/'
+    url = base_url + '/reviews/bukmekerskaya_kontora_liga_stavok/'
     client = Downloader()
     client.set_new_proxy()
     client.set_new_user_agent()
-    reconnect_counter = 0
 
     '''
     По скольку на сайте нельзя понять общее количество страниц,
     запускаем бесконечный цикл, пока страницы есть
     '''
     while True:
-        '''
-        Частенько может возникнуть исключение,
-        если прокся не доступна,
-        тогда пробуем новую проксю и так до 10ти раз
-        '''
-        while True:
-            if reconnect_counter > 10:
-                logging.warning('Reconnect counter is more than 10!')
-            try:
-                logging.info(f'Current proxy={client.proxy}, requesting {base_url + url}')
-                html = await client.run(base_url + url)
-                if not html:
-                    client.set_new_proxy()
-                    client.set_new_user_agent()
-                    continue
-                reconnect_counter = 0
-                break
-            except Exception as e:
-                logging.warning(e)
-                reconnect_counter += 1
-                client.set_new_proxy()
-                client.set_new_user_agent()
-                logging.warning(f'Try to set new proxy={client.proxy}')
-        logging.info(f'Connected {base_url + url}')
+        
+        html = await client.failsafe_connect(url)
+        logging.info(f'Connected {url}')
         soup = Parser(html, 'lxml')
         data = soup.get_data()
 
@@ -218,24 +222,7 @@ async def main():
 
             '''Пытаемся скачать html со страницы отзывов'''
             # TODO убрать дублирование этой конструкции
-            while True:
-                if reconnect_counter > 10:
-                    logging.warning('Reconnect counter is more than 10!')
-                try:
-                    logging.info(f'Requesting {r_url}')
-                    r_html = await client.run(r_url)
-                    if not r_html:
-                        client.set_new_proxy()
-                        client.set_new_user_agent()
-                        continue
-                    reconnect_counter = 0
-                    break
-                except Exception as e:
-                    logging.warning(e)
-                    reconnect_counter += 1
-                    client.set_new_proxy()
-                    client.set_new_user_agent()
-                    logging.warning(f'Try to set new proxy={client.proxy}')
+            r_html = await client.failsafe_connect(r_url)
             logging.info('Request passed')
 
             '''Парсим html'''
