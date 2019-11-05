@@ -14,6 +14,18 @@ import lxml
 class Settings:
     BASE_URL = 'https://otzovik.com'
     BASE_DIR = os.path.dirname(os.path.realpath(__file__))
+    URLS = [
+        'https://otzovik.com/reviews/ivi_ru-besplatniy_videoservis_s_licenzionnim_polnometrazhnim_kontentom/',
+        'https://otzovik.com/reviews/okko_tv-onlayn_kinoteatr/',
+        'https://otzovik.com/reviews/megogo_net_onlayn-kinoteatr/',
+        'https://otzovik.com/reviews/interaktivnoe_televidenie_wink_russia/',
+        'https://otzovik.com/reviews/tvzavr_ru-on-layn_kinoteatr/',
+        'https://otzovik.com/reviews/amediateka_ru-onlayn_kinoteatr/',
+        'https://otzovik.com/reviews/start-kinoteatr_onlayn/',
+        'https://otzovik.com/reviews/usluga_megafon_tv/',
+        'https://otzovik.com/reviews/kinotv1_ru-onlayn_kinoteatr/',
+        'https://otzovik.com/reviews/vipplay_ru_onlayn_kinoteatr/',
+    ]
 
 
 class Downloader:
@@ -38,15 +50,6 @@ class Downloader:
 
     def set_new_user_agent(self):
         self.user_agent = random.choice(self.ua_list)
-
-    '''
-    Забираем список url-ов по которым будем парсить
-    '''
-    def get_all_urls(self):
-        urls_file = os.path.join(Settings.BASE_DIR, 'urls.txt')
-        with open(urls_file) as f:
-            urls = [url.strip() for url in f.readlines()]
-        return urls
 
     '''
     Частенько может возникнуть исключение,
@@ -228,9 +231,8 @@ async def main():
     client = Downloader()
     client.set_new_proxy()
     client.set_new_user_agent()
-    urls = client.get_all_urls()
 
-    for url in urls:
+    for url in Settings.URLS:
         '''
         Задаем имя csv-файла по названию url-а страницы,
         если уже существует,
