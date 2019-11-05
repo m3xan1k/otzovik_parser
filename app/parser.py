@@ -14,10 +14,10 @@ import settings
 
 
 class Downloader:
-    """
+    '''
     Класс для http запросов
     :params: proxy - строка с url или ip прокси-сервера 'http://proxyadress.com'
-    """
+    '''
     def __init__(self, proxy=None, user_agent=None):
         self.proxy = proxy
         self.user_agent = user_agent
@@ -36,6 +36,15 @@ class Downloader:
             lines = f.readlines()
             user_agent = random.choice(lines)
         self.user_agent = user_agent
+
+    '''
+    Забираем список url-ов по которым будем парсить
+    '''
+    def get_all_urls(self):
+        urls_file = os.path.join(settings.BASE_DIR, 'urls.txt')
+        with open(urls_file) as f:
+            urls = [url.strip() for url in f.readlines()]
+        return urls
 
     '''
     Частенько может возникнуть исключение,
@@ -121,13 +130,16 @@ class Parser(BeautifulSoup):
         plus = self.find(class_='review-plus')
         minus = self.find(class_='review-minus')
         description = self.find(class_='review-body description')
+        summary = self.find(class_='summary')
         plus = plus.text if plus else ''
         minus = minus.text if minus else ''
-        description = description.text if description else ''
+        content = description.text if description else ''
+        summary = summary.text if summary else ''
         return {
             'plus': plus,
             'minus': minus,
-            'description': f'{plus} {minus} {description}',
+            'content': f'{summary} {plus} {minus} {content}',
+            'summary': summary,
         }
 
     '''
@@ -167,19 +179,32 @@ class Writer:
     Класс для записи данных в csv-файл,
     всё банально на стандартной библиотеке
     '''
-    def __init__(self, filepath):
-        self.filepath = filepath
+    def __init__(self, dirpath, filepath):
+        self.dirpath = os.path.join(settings.BASE_DIR, dirpath)
+        self.filepath = os.path.join(settings.BASE_DIR, dirpath, filepath)
+
+    '''
+    Если csv-файл существует,
+    прибавляем единицу к индексу в названии
+    '''
+    def try_make_new_filepath_version(self):
+        if os.path.isfile(self.filepath):
+            version = int(self.filepath.split('_')[-1].replace('.csv', ''))
+            base = '_'.join(self.filepath.split('_')[:-1])
+            self.filepath = f'{base}_{version + 1}.csv'
 
     def write(self, row):
+        if not os.path.exists(self.dirpath):
+            os.mkdir(self.dirpath)
         if os.path.isfile(self.filepath):
             mode = 'a'
         else:
             mode = 'w'
         with open(self.filepath, mode) as file:
             fieldnames = [
-                'login', 'date', 'description',
+                'login', 'date', 'content',
                 'rate', 'country', 'city',
-                'plus', 'minus'
+                'plus', 'minus', 'summary'
             ]
             writer = csv.DictWriter(file, fieldnames=fieldnames)
             if mode == 'w':
@@ -190,7 +215,6 @@ class Writer:
 async def main():
     # TODO collect dead proxies to skip them
     logging.basicConfig(level=logging.DEBUG)
-    writer = Writer(f'{settings.BASE_DIR}/result.csv')
 
     '''
     Готовим первый запрос — собираем url,
@@ -198,57 +222,67 @@ async def main():
     новый user-agent, инициализируем счетчик переподключений
     '''
     base_url = settings.BASE_URL
-    url = base_url + '/reviews/bukmekerskaya_kontora_liga_stavok/'
+
     client = Downloader()
     client.set_new_proxy()
     client.set_new_user_agent()
+    urls = client.get_all_urls()
 
-    '''
-    По скольку на сайте нельзя понять общее количество страниц,
-    запускаем бесконечный цикл, пока страницы есть
-    '''
-    while True:
-        
-        html = await client.failsafe_connect(url)
-        logging.info(f'Connected {url}')
-        soup = Parser(html, 'lxml')
-        data = soup.get_data()
+    for url in urls:
+        '''
+        Задаем имя csv-файла по названию url-а страницы,
+        если уже существует,
+        то создаем новую версию
+        '''
+        csv_filename = url.split('/')[-2]
+        writer = Writer('results', f'{csv_filename}_1.csv')
+        writer.try_make_new_filepath_version()
 
-        '''Отзывы находятся на отдельных страницах'''
-        review_urls = soup.get_review_urls()
-        for r_url, t_row in zip(review_urls, zip(*data)):
+        '''
+        По скольку на сайте нельзя понять общее количество страниц,
+        запускаем бесконечный цикл, пока страницы есть
+        '''
+        while True:
+            html = await client.failsafe_connect(url)
+            logging.info(f'Connected {url}')
+            soup = Parser(html, 'lxml')
+            data = soup.get_data()
+
+            '''Отзывы находятся на отдельных страницах'''
+            review_urls = soup.get_review_urls()
+            for r_url, t_row in zip(review_urls, zip(*data)):
+                client.set_new_proxy()
+                logging.info(f'Current proxy={client.proxy}')
+
+                '''Пытаемся скачать html со страницы отзывов'''
+                # TODO убрать дублирование этой конструкции
+                r_html = await client.failsafe_connect(r_url)
+                logging.info('Request passed')
+
+                '''Парсим html'''
+                r_soup = Parser(r_html, 'lxml')
+                review = r_soup.get_review()
+
+                '''Сцепляем данные и записываем в csv'''
+                row = {}
+                for elem in t_row:
+                    row.update(elem)
+                row.update(review)
+                writer.write(row)
+            logging.info(f'All reviews on {url} done')
+
+            '''
+            Находим url следующей страницы,
+            если нет, значит страница последняя,
+            если да меняем проксю
+            '''
+            url = soup.get_next_page_url()
+            if not url:
+                logging.info('Last page done')
+                break
+            url = base_url + url
             client.set_new_proxy()
-            logging.info(f'Current proxy={client.proxy}')
-
-            '''Пытаемся скачать html со страницы отзывов'''
-            # TODO убрать дублирование этой конструкции
-            r_html = await client.failsafe_connect(r_url)
-            logging.info('Request passed')
-
-            '''Парсим html'''
-            r_soup = Parser(r_html, 'lxml')
-            review = r_soup.get_review()
-
-            '''Сцепляем данные и записываем в csv'''
-            row = {}
-            for elem in t_row:
-                row.update(elem)
-            row.update(review)
-            writer.write(row)
-        logging.info(f'All reviews on {url} done')
-
-        '''
-        Находим url следующей страницы,
-        если нет, значит страница последняя,
-        если да меняем проксю
-        '''
-        url = soup.get_next_page_url()
-        if not url:
-            logging.info('Last page done')
-            break
-        url = base_url + url
-        client.set_new_proxy()
-        client.set_new_user_agent()
+            client.set_new_user_agent()
 
 
 if __name__ == '__main__':
