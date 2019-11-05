@@ -25,17 +25,16 @@ class Downloader:
 
         '''Загружаем список проксей в память'''
         with open(f'{settings.BASE_DIR}/http_proxies.txt', 'r') as f:
-            lines = f.readlines()
-            self.proxy_list = lines
+            self.proxy_list = f.readlines()
+
+        with open(f'{settings.BASE_DIR}/whatismybrowser-user-agent-database.txt') as f:
+            self.ua_list = f.readlines()
 
     def set_new_proxy(self):
         self.proxy = random.choice(self.proxy_list)
 
     def set_new_user_agent(self):
-        with open(f'{settings.BASE_DIR}/whatismybrowser-user-agent-database.txt') as f:
-            lines = f.readlines()
-            user_agent = random.choice(lines)
-        self.user_agent = user_agent
+        self.user_agent = random.choice(self.ua_list)
 
     '''
     Забираем список url-ов по которым будем парсить
