@@ -10,7 +10,10 @@ import aiohttp
 import aiofiles
 import lxml
 
-import settings
+
+class Settings:
+    BASE_URL = 'https://otzovik.com'
+    BASE_DIR = os.path.dirname(os.path.realpath(__file__))
 
 
 class Downloader:
@@ -24,10 +27,10 @@ class Downloader:
         self.timeout = aiohttp.ClientTimeout(total=15)
 
         '''Загружаем список проксей в память'''
-        with open(f'{settings.BASE_DIR}/http_proxies.txt', 'r') as f:
+        with open(f'{Settings.BASE_DIR}/http_proxies.txt', 'r') as f:
             self.proxy_list = f.readlines()
 
-        with open(f'{settings.BASE_DIR}/whatismybrowser-user-agent-database.txt') as f:
+        with open(f'{Settings.BASE_DIR}/whatismybrowser-user-agent-database.txt') as f:
             self.ua_list = f.readlines()
 
     def set_new_proxy(self):
@@ -40,7 +43,7 @@ class Downloader:
     Забираем список url-ов по которым будем парсить
     '''
     def get_all_urls(self):
-        urls_file = os.path.join(settings.BASE_DIR, 'urls.txt')
+        urls_file = os.path.join(Settings.BASE_DIR, 'urls.txt')
         with open(urls_file) as f:
             urls = [url.strip() for url in f.readlines()]
         return urls
@@ -179,15 +182,15 @@ class Writer:
     всё банально на стандартной библиотеке
     '''
     def __init__(self, dirpath, filepath):
-        self.dirpath = os.path.join(settings.BASE_DIR, dirpath)
-        self.filepath = os.path.join(settings.BASE_DIR, dirpath, filepath)
+        self.dirpath = os.path.join(Settings.BASE_DIR, dirpath)
+        self.filepath = os.path.join(Settings.BASE_DIR, dirpath, filepath)
 
     '''
     Если csv-файл существует,
     прибавляем единицу к индексу в названии
     '''
     def try_make_new_filepath_version(self):
-        if os.path.isfile(self.filepath):
+        while os.path.isfile(self.filepath):
             version = int(self.filepath.split('_')[-1].replace('.csv', ''))
             base = '_'.join(self.filepath.split('_')[:-1])
             self.filepath = f'{base}_{version + 1}.csv'
@@ -220,7 +223,7 @@ async def main():
     инициализируем загрузчика и выбираем новый прокси,
     новый user-agent, инициализируем счетчик переподключений
     '''
-    base_url = settings.BASE_URL
+    base_url = Settings.BASE_URL
 
     client = Downloader()
     client.set_new_proxy()
