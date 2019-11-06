@@ -122,8 +122,6 @@ async def main():
     инициализируем загрузчика и выбираем новый прокси,
     новый user-agent, инициализируем счетчик переподключений
     '''
-    base_url = BASE_URL
-
     parser = OtzovikParser()
     client = parser.downloader(
         proxy_list='http_proxies.txt',
@@ -191,7 +189,7 @@ async def main():
             if not url:
                 logging.info('Last page done')
                 break
-            url = base_url + url
+            url = BASE_URL + url
             client.set_new_proxy()
             client.set_new_user_agent()
 
