@@ -141,7 +141,7 @@ async def main():
         '''
         csv_filename = url.split('/')[-2]
         writer = Writer(
-            dirpath='results',
+            dirpath='otzovik_results',
             filepath=f'{csv_filename}_1.csv',
             fieldnames=fieldnames
         )
