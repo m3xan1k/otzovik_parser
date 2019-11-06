@@ -33,23 +33,37 @@ class Downloader:
     Класс для http запросов
     :params: proxy - строка с url или ip прокси-сервера 'http://proxyadress.com'
     '''
-    def __init__(self, proxy=None, user_agent=None):
-        self.proxy = proxy
-        self.user_agent = user_agent
-        self.timeout = aiohttp.ClientTimeout(total=15)
+    def __init__(self, proxy_list=None, ua_list=None, timeout=15):
+        '''
+        proxy_list: файл со списком проксей
+        ua_list: файл со списком user-агентов
+        '''
+        self.timeout = aiohttp.ClientTimeout(total=timeout)
 
-        '''Загружаем список проксей в память'''
-        with open(f'{Settings.BASE_DIR}/http_proxies.txt', 'r') as f:
-            self.proxy_list = f.readlines()
+        '''Если есть, то загружаем список проксей в память'''
+        if proxy_list:
+            with open(f'{Settings.BASE_DIR}/{proxy_list}', 'r') as f:
+                self.proxy_list = f.readlines()
+                self.proxy = random.choice(self.proxy_list)
+        else:
+            self.proxy_list = None
+            self.proxy = None
 
-        with open(f'{Settings.BASE_DIR}/whatismybrowser-user-agent-database.txt') as f:
-            self.ua_list = f.readlines()
+        if ua_list:
+            with open(f'{Settings.BASE_DIR}/{ua_list}') as f:
+                self.ua_list = f.readlines()
+                self.user_agent = random.choice(self.ua_list)
+        else:
+            self.ua_list = None
+            self.user_agent = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/42.0.2311.135 Safari/537.36'
 
     def set_new_proxy(self):
-        self.proxy = random.choice(self.proxy_list)
+        if self.proxy_list:
+            self.proxy = random.choice(self.proxy_list)
 
     def set_new_user_agent(self):
-        self.user_agent = random.choice(self.ua_list)
+        if self.ua_list:
+            self.user_agent = random.choice(self.ua_list)
 
     '''
     Частенько может возникнуть исключение,
@@ -134,16 +148,16 @@ class Parser(BeautifulSoup):
     def get_review(self):
         plus = self.find(class_='review-plus')
         minus = self.find(class_='review-minus')
-        description = self.find(class_='review-body description')
+        content = self.find(class_='review-body description')
         summary = self.find(class_='summary')
         plus = plus.text if plus else ''
         minus = minus.text if minus else ''
-        content = description.text if description else ''
+        content = '\n'.join([string for string in content.strings]) if content else ''
         summary = summary.text if summary else ''
         return {
             'plus': plus,
             'minus': minus,
-            'content': f'{summary} {plus} {minus} {content}',
+            'content': f'{summary}\n{plus}\n{minus}\n{content}',
             'summary': summary,
         }
 
@@ -184,9 +198,15 @@ class Writer:
     Класс для записи данных в csv-файл,
     всё банально на стандартной библиотеке
     '''
-    def __init__(self, dirpath, filepath):
+    def __init__(self, dirpath, filepath, fieldnames):
+        '''
+        dirpath: имя папки
+        filepath: имя файла
+        fieldnames: поля csv-файла
+        '''
         self.dirpath = os.path.join(Settings.BASE_DIR, dirpath)
         self.filepath = os.path.join(Settings.BASE_DIR, dirpath, filepath)
+        self.fieldnames = fieldnames
 
     '''
     Если csv-файл существует,
@@ -198,7 +218,7 @@ class Writer:
             base = '_'.join(self.filepath.split('_')[:-1])
             self.filepath = f'{base}_{version + 1}.csv'
 
-    def write(self, row):
+    def write_row(self, row):
         if not os.path.exists(self.dirpath):
             os.mkdir(self.dirpath)
         if os.path.isfile(self.filepath):
@@ -206,12 +226,7 @@ class Writer:
         else:
             mode = 'w'
         with open(self.filepath, mode) as file:
-            fieldnames = [
-                'login', 'date', 'content',
-                'rate', 'country', 'city',
-                'plus', 'minus', 'summary'
-            ]
-            writer = csv.DictWriter(file, fieldnames=fieldnames)
+            writer = csv.DictWriter(file, fieldnames=self.fieldnames)
             if mode == 'w':
                 writer.writeheader()
             writer.writerow(row)
@@ -228,9 +243,15 @@ async def main():
     '''
     base_url = Settings.BASE_URL
 
-    client = Downloader()
-    client.set_new_proxy()
-    client.set_new_user_agent()
+    client = Downloader(
+        proxy_list='http_proxies.txt',
+        ua_list='whatismybrowser-user-agent-database.txt'
+    )
+    fieldnames = [
+        'login', 'date', 'content',
+        'rate', 'country', 'city',
+        'plus', 'minus', 'summary'
+    ]
 
     for url in Settings.URLS:
         '''
@@ -239,7 +260,11 @@ async def main():
         то создаем новую версию
         '''
         csv_filename = url.split('/')[-2]
-        writer = Writer('results', f'{csv_filename}_1.csv')
+        writer = Writer(
+            dirpath='results',
+            filepath=f'{csv_filename}_1.csv',
+            fieldnames=fieldnames
+        )
         writer.try_make_new_filepath_version()
 
         '''
@@ -272,7 +297,7 @@ async def main():
                 for elem in t_row:
                     row.update(elem)
                 row.update(review)
-                writer.write(row)
+                writer.write_row(row)
             logging.info(f'All reviews on {url} done')
 
             '''
