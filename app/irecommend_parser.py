@@ -1,6 +1,7 @@
 import asyncio
 import os
 import logging
+from datetime import datetime
 
 from bs4 import BeautifulSoup
 import lxml
@@ -33,24 +34,43 @@ class IrecommendParser(Parser):
     Собираем все данные
     '''
     def get_review_data(self, soup):
-        author = soup.find('div', {'itemprop': 'author'}).text.strip()
-        rate = soup.find('meta', {'itemprop': 'ratingValue'}).get('content')
-        date = soup.find('meta', {'itemprop': 'datePublished'}).get('content')
-        title = soup.find(class_='reviewTitle').text
-        review_body_list = soup.find('div', {'itemprop': 'reviewBody'}).strings
-        review_body = ''.join(review_body_list)
-        normalized_date = self.normalize_date(date)
+        author = soup.find('div', {'itemprop': 'author'})
+        rating = soup.find('meta', {'itemprop': 'ratingValue'})
+        date = soup.find('meta', {'itemprop': 'datePublished'})
+        title = soup.find(class_='reviewTitle')
+        review_body_list = soup.find('div', {'itemprop': 'reviewBody'})
+        review_body = self.normalize_review_body(review_body_list) if review_body_list else ''
+        normalized_date = self.normalize_date(date.get('content')) if date else ''
+        minus = soup.find(class_='minus')
+        normalized_minus = self.normalize_pros_and_cons(minus)
+        plus = soup.find(class_='plus')
+        normalized_plus = self.normalize_pros_and_cons(plus)
         return {
-            'author': author,
-            'rate': rate,
-            'date': normalized_date,
-            'title': title,
-            'content': f'{title}\n{review_body}',
+            'author': author.text.strip() if author else '',
+            'rating': rating.get('content') if rating else '',
+            'publication_date': normalized_date,
+            'collection_date': datetime.today(),
+            'title': title.text if title else '',
+            'content': f'{title}\n{normalized_plus}\n{normalized_minus}\n{review_body}',
+            'positive': normalized_plus,
+            'negative': normalized_minus,
+            'source': BASE_URL.split('/')[-1],
         }
 
     def normalize_date(self, date):
         date_only = date.split('T')[0]
         return date_only
+
+    def normalize_pros_and_cons(self, ratio):
+        if ratio:
+            items = ratio.find_all('li')
+            return ' '.join([item.text for item in items])
+        return ''
+
+    def normalize_review_body(self, body):
+        to_replace = '\n' * 5
+        return ''.join(body.strings).replace(to_replace, '\n') if body else ''
+
 
 
 async def main():
@@ -61,9 +81,9 @@ async def main():
         ua_list='whatismybrowser-user-agent-database.txt'
     )
     fieldnames = [
-        'author', 'publication_date', 'content',
-        'rating', 'country', 'city',
-        'plus', 'minus', 'title'
+        'title', 'content', 'author', 'rating',
+        'positive', 'negative', 'publication_date', 
+        'collection_date', 'source'
     ]
 
     for url in URLS:
