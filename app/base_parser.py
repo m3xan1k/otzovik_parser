@@ -19,6 +19,10 @@ class Downloader:
     Класс для http запросов
     :params: proxy - строка с url или ip прокси-сервера 'http://proxyadress.com'
     '''
+    @classmethod
+    def create(cls):
+        pass
+
     def __init__(self, proxy_list=None, ua_list=None, timeout=15):
         '''
         proxy_list: файл со списком проксей
